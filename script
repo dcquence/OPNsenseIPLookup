@@ -1,0 +1,69 @@
+// ==UserScript==
+// @name         Hyperlink IP Addresses in Firewall Log
+// @namespace    http://tampermonkey.net/
+// @version      3.1
+// @description  Hyperlink IP addresses in OPNsense firewall log to IP lookup site
+// @match        https://10.1.1.1:7443/ui/diagnostics/firewall/log*
+// @grant        none
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    const LOOKUP_BASE = 'https://ipinfo.io/';
+    const IP_PORT_REGEX = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?\b/g;
+    const EXCLUDED = [
+        /^0\.0\.0\.0$/, /^10\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+        /^192\.168\./, /^224\./, /^255\./, /^127\./, /^169\.254\./
+    ];
+    const isExcludedIP = ip => EXCLUDED.some(r => r.test(ip));
+
+    function hyperlinkIPs(cell) {
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
+        let node;
+        while ((node = walker.nextNode())) {
+            if (node.parentElement.tagName !== 'A') textNodes.push(node);
+        }
+
+        textNodes.forEach(textNode => {
+            const val = textNode.nodeValue;
+            const matches = [...val.matchAll(IP_PORT_REGEX)];
+            // Only touch nodes containing at least one linkable IP
+            if (!matches.some(m => !isExcludedIP(m[1]))) return;
+
+            const frag = document.createDocumentFragment();
+            let last = 0;
+            for (const m of matches) {
+                const ip = m[1], port = m[2] || '';
+                if (m.index > last) frag.appendChild(document.createTextNode(val.slice(last, m.index)));
+                if (isExcludedIP(ip)) {
+                    frag.appendChild(document.createTextNode(ip + port));
+                } else {
+                    const a = document.createElement('a');
+                    a.href = LOOKUP_BASE + ip;
+                    a.target = '_blank';
+                    a.rel = 'noopener noreferrer';
+                    a.textContent = ip;
+                    frag.appendChild(a);
+                    if (port) frag.appendChild(document.createTextNode(port));
+                }
+                last = m.index + m[0].length;
+            }
+            if (last < val.length) frag.appendChild(document.createTextNode(val.slice(last)));
+            textNode.parentNode.replaceChild(frag, textNode);
+        });
+    }
+
+    let queued = false;
+    function processAllCells() {
+        queued = false;
+        document.querySelectorAll('.tabulator-cell').forEach(hyperlinkIPs);
+    }
+
+    new MutationObserver(() => {
+        if (!queued) { queued = true; requestAnimationFrame(processAllCells); }
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    processAllCells();
+})();
