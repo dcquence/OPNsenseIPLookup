@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      3.1
 // @description  Hyperlink IP addresses in OPNsense firewall log to IP lookup site
-// @match        https://10.1.1.1:7443/ui/diagnostics/firewall/log*
+// @match        https://<Your_OPNsense_IP>/ui/diagnostics/firewall/log*
 // @grant        none
 // ==/UserScript==
 
